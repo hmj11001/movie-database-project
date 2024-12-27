@@ -1,12 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { fetchMovieByName } from './omdbService';
 import MovieCard from './MovieCard';
-import './MovieSearch.css'; // Import CSS for grid layout
+import './MovieSearch.css'; // Import CSS
+import { firestore } from './firebase'; // Assuming firestore is correctly imported
+
+// Firestore v9+ imports
+import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 
 function MovieSearch() {
   const [query, setQuery] = useState('');
   const [movies, setMovies] = useState([]);
   const [error, setError] = useState(null);
+  const [movieLists, setMovieLists] = useState({
+    'Want to Watch': [],
+    Liked: [],
+    Disliked: [],
+  });
+
+  // Fetch movie lists from Firestore 
+  useEffect(() => {
+    const fetchLists = async () => {
+      try {
+        const listsCollection = await getDocs(collection(firestore, 'movieLists'));
+        const listsData = {};
+        listsCollection.forEach(doc => {
+          listsData[doc.id] = doc.data().movies || [];
+        });
+        setMovieLists(listsData);
+      } catch (err) {
+        console.error('Error fetching movie lists:', err);
+      }
+    };
+    fetchLists();
+  }, []);
 
   const handleSearch = async () => {
     if (query) {
@@ -27,7 +53,7 @@ function MovieSearch() {
           setError(result.Error);
         }
       } catch (err) {
-        setError("Error fetching data. Please try again.");
+        setError("Movie not found. Please try again.");
         console.error(err);
       }
     }
@@ -41,6 +67,20 @@ function MovieSearch() {
       Genre: data.Genre,
       Plot: data.Plot
     };
+  };
+
+  const addMovieToList = async (movie, listName) => {
+    const updatedLists = { ...movieLists };
+    updatedLists[listName] = [...updatedLists[listName], movie];
+    try {
+      const listRef = doc(firestore, 'movieLists', listName); // Use doc() for specifying the document
+      await setDoc(listRef, {
+        movies: updatedLists[listName],
+      });
+      setMovieLists(updatedLists); // Update state locally
+    } catch (err) {
+      console.error('Error adding movie to list: ', err);
+    }
   };
 
   return (
@@ -58,7 +98,13 @@ function MovieSearch() {
 
       <div className="movie-cards-container">
         {movies.length > 0 ? (
-          movies.map((movie) => <MovieCard key={movie.imdbID} movie={movie} />)
+          movies.map((movie) => (
+            <MovieCard 
+              key={movie.imdbID} 
+              movie={movie}
+              addMovieToList={addMovieToList} 
+            />
+          ))
         ) : (
           <p>No movies found!</p>
         )}
